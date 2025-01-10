@@ -2,7 +2,7 @@ import streamlit as st
 from src.models.project import create_project, Project
 from src.storage import save_data, load_data
 from src.storage.factory import get_storage_provider
-from src.models.issue import create_issue
+from src.models.issue import create_issue, add_comment
 from src.views.issue_view import render_issue_list
 
 def render_project_list(projects):
