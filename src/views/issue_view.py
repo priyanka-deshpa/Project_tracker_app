@@ -1,6 +1,7 @@
 import streamlit as st
 from src.storage import load_data, save_data
 from src.models.issue import create_issue, Issue, Comment
+from src.storage.database import get_all_issues, save_issue, update_issue, delete_issue
 from datetime import datetime
 
 def render_issue_form(issue_to_edit=None):
@@ -196,20 +197,19 @@ def render_issue_form(issue_to_edit=None):
             #     st.rerun()     
             
 def render_issue_list(project_name):
-    projects, issues = load_data()
+    # Get all issues
+    issues = get_all_issues()
     project_issues = [i for i in issues if i['project'] == project_name]
     
     # Search and Add buttons
-    st.markdown('<div class="header-container">', unsafe_allow_html=True)
     col1, col2 = st.columns([4, 1])
     with col1:
-        search_query = st.text_input("", placeholder="🔍 Search Issues....", key="issue_search", label_visibility="collapsed")
+        search_query = st.text_input("", placeholder="🔍 Search Issues....", key="issue_search")
     with col2:
         if st.button("➕ Add New Issue", use_container_width=True):
             st.session_state.add_issue = True
             st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-        
+    
     # Filter issues based on search
     if search_query:
         project_issues = [i for i in project_issues if search_query.lower() in i['title'].lower()]
@@ -228,12 +228,17 @@ def render_issue_list(project_name):
                     st.error("Please fill in all required fields")
                     return
                 
-                new_issue = create_issue(project_name, title, description, status)
-                issues.append(new_issue)
-                save_data(projects, issues)
-                st.session_state.add_issue = False
-                st.success("Issue added successfully!")
-                st.rerun()
+                issue_data = {
+                    'project': project_name,
+                    'title': title,
+                    'description': description,
+                    'status': status
+                }
+                
+                if save_issue(issue_data):
+                    st.session_state.add_issue = False
+                    st.success("Issue added successfully!")
+                    st.rerun()
 
     # Display issues
     if project_issues:
@@ -247,15 +252,15 @@ def render_issue_list(project_name):
                 col1, col2 = st.columns([1, 3])
                 with col1:
                     new_status = "Completed" if issue['status'] == "Pending" else "Pending"
-                    if st.button(f"Mark as {new_status}", key=f"toggle_{issue['title']}"):
+                    if st.button(f"Mark as {new_status}", key=f"toggle_{issue['id']}"):
                         st.session_state.toggle_status = {
-                            'issue': issue,
+                            'issue_id': issue['id'],
                             'new_status': new_status
                         }
                 
                 # Status change comment form
-                if st.session_state.get('toggle_status', {}).get('issue') == issue:
-                    with st.form(key=f"status_comment_{issue['title']}"):
+                if st.session_state.get('toggle_status', {}).get('issue_id') == issue['id']:
+                    with st.form(key=f"status_comment_{issue['id']}"):
                         comment = st.text_area(
                             f"Add a comment for marking as {st.session_state.toggle_status['new_status']} *",
                             placeholder="Explain why you're changing the status..."
@@ -268,19 +273,20 @@ def render_issue_list(project_name):
                                 return
                             
                             # Update issue status and add comment
-                            issue['status'] = st.session_state.toggle_status['new_status']
-                            add_comment(
-                                issue, 
-                                comment, 
-                                author, 
-                                f"Changed status to {st.session_state.toggle_status['new_status']}"
-                            )
+                            comment_data = {
+                                'text': comment,
+                                'author': author,
+                                'status_change': f"Changed status to {st.session_state.toggle_status['new_status']}"
+                            }
                             
-                            # Save changes
-                            save_data(projects, issues)
-                            del st.session_state.toggle_status
-                            st.success("Status updated successfully!")
-                            st.rerun()
+                            if update_issue(
+                                issue['id'],
+                                st.session_state.toggle_status['new_status'],
+                                comment_data
+                            ):
+                                del st.session_state.toggle_status
+                                st.success("Status updated successfully!")
+                                st.rerun()
                 
                 # Display comments
                 if issue.get('comments'):
@@ -295,10 +301,9 @@ def render_issue_list(project_name):
                             st.divider()
                 
                 # Delete button
-                if st.button("🗑️ Delete Issue", key=f"delete_{issue['title']}"):
-                    issues.remove(issue)
-                    save_data(projects, issues)
-                    st.success("Issue deleted successfully!")
-                    st.rerun()
+                if st.button("🗑️ Delete Issue", key=f"delete_{issue['id']}"):
+                    if delete_issue(issue['id']):
+                        st.success("Issue deleted successfully!")
+                        st.rerun()
     else:
         st.info("No issues found for this project.")                  
